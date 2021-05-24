@@ -1,0 +1,228 @@
+# 基于项目的协同过滤推荐算法实现
+import os
+import random
+import math
+from operator import itemgetter
+import shelve
+from contextlib import closing
+import pandas as pd
+import numpy as np
+from datetime import datetime
+import tool as tl 
+
+# read file 
+def load_file(filename):
+    with open(filename, 'r', encoding='utf-8') as f:
+        for i, line in enumerate(f):
+            if i == 0:
+                # 去掉文件第一行的title
+                continue
+            yield line.strip('\r\n')
+    print('Load %s success!' % filename)
+def get_dataset(filename, pivot=0.75):
+    trainSet = {}
+    testSet = {}
+    trainSet_len = 0
+    testSet_len = 0
+    # 加载文件， 按行读取
+    for line in load_file(filename):
+        # 读取列属性
+        user, movie, rating, _ = line.split(',')
+        user = int(user)
+        movie = int(movie)
+        rating = float(rating)
+        # 数据划分测试集合和数据集合 (0,1) < (0,pivot)
+        if random.random() < pivot:
+            trainSet.setdefault(movie, {})
+            trainSet[movie][user] = rating
+            trainSet_len += 1
+        else:
+            testSet.setdefault(movie, {})
+            testSet[movie][user] = rating
+            testSet_len += 1
+    print('Split trainingSet and testSet success!')
+    print('movie - user - matrix')
+    print('TrainSet = %s' % trainSet_len)
+    print('TestSet = %s' % testSet_len)
+    return trainSet, testSet\
+
+
+def count_user(trainSet):
+    # 统计电影被看的次数
+    movie_popular = {}
+    user_list = {}
+    for movie, users in trainSet.items():
+        if movie not in movie_popular:
+            movie_popular.setdefault(movie, 0)
+        for user in users:
+            if user not in user_list:
+                user_list[user] = 0
+            user_list[user] += 1
+
+    print("Total user number = %d" % len(user_list))
+    print("Total movie number = %d" % len(movie_popular))
+    return movie_popular, user_list
+
+def users_all(trainSet, user_list):
+    new_train = {}
+    for movie, users in trainSet.items():
+        new_user = []
+        for i in user_list.keys():
+            new_user.append(users.get(i,0))
+        new_train.setdefault(movie, new_user)
+    return new_train
+
+
+
+
+
+def sim_movie(trainSet, movie_popular):
+    sim = tl.Similarity()
+    movie_sim_matrix = {}
+    i = 0
+    max = len(movie_popular)
+    # 遍历训练数据，获得用户对有过的行为的物品
+
+    movie_list = list(movie_popular.keys())
+
+    for i1 in range(0, len(movie_list)):
+        # 遍历该用户每件物品项
+        for i2 in range(i1, len(movie_list)):
+            # 遍历该用户每件物品项
+            
+            m1, m2 = movie_list[i1], movie_list[i2]
+
+            movie_sim_matrix.setdefault(m1, {})
+            movie_sim_matrix.setdefault(m2, {})
+            if m1 == m2:
+                movie_sim_matrix[m1].setdefault(m2,1)
+                continue 
+                
+            u1 = trainSet.get(m1)
+            u2 = trainSet.get(m2)
+            
+            simi = cosine_similarity(u1,u2)
+
+            movie_sim_matrix[m1].setdefault(m2, simi)
+            movie_sim_matrix[m2].setdefault(m1, simi)
+        i += 1
+        print("\r{0}%".format(round(i/max*100,4)), end='')
+        
+    print()
+    # movie and movie 矩阵
+    print("Build 同现矩阵co-rated users matrix success!")
+    return movie_sim_matrix
+
+"""
+100.0%
+Build 同现矩阵co-rated users matrix success!
+         270607422 function calls in 113.558 seconds
+
+   Ordered by: standard name
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+ 38618866    2.570    0.000    2.570    0.000 <ipython-input-12-f9dafbdb8c1d>:1(cosine_similarity)
+        1   57.002   57.002  112.822  112.822 <ipython-input-13-a53068693e8c>:1(sim_movie)
+        1    0.736    0.736  113.558  113.558 <string>:1(<module>)
+    17989    1.906    0.000    2.114    0.000 iostream.py:180(schedule)
+    17581    0.050    0.000    0.065    0.000 iostream.py:284(_is_master_process)
+    17581    0.008    0.000    0.022    0.000 iostream.py:297(_schedule_flush)
+    17581    0.182    0.000    2.377    0.000 iostream.py:342(write)
+    17989    0.031    0.000    0.031    0.000 iostream.py:87(_event_pipe)
+    17989    0.021    0.000    0.050    0.000 threading.py:1062(_wait_for_tstate_lock)
+    17989    0.049    0.000    0.110    0.000 threading.py:1104(is_alive)
+    17989    0.011    0.000    0.011    0.000 threading.py:506(is_set)
+        1    0.000    0.000  113.558  113.558 {built-in method builtins.exec}
+    17581    0.008    0.000    0.008    0.000 {built-in method builtins.isinstance}
+     8791    0.005    0.000    0.005    0.000 {built-in method builtins.len}
+     8791    0.085    0.000    2.463    0.000 {built-in method builtins.print}
+     8789    0.096    0.000    0.096    0.000 {built-in method builtins.round}
+    17581    0.016    0.000    0.016    0.000 {built-in method nt.getpid}
+    17989    0.067    0.000    0.067    0.000 {built-in method nt.urandom}
+    17989    0.029    0.000    0.029    0.000 {method 'acquire' of '_thread.lock' objects}
+        1    0.000    0.000    0.000    0.000 {method 'disable' of '_lsprof.Profiler' objects}
+     8789    0.068    0.000    0.068    0.000 {method 'format' of 'str' objects}
+ 77237732   12.020    0.000   12.020    0.000 {method 'get' of 'dict' objects}
+        1    0.000    0.000    0.000    0.000 {method 'keys' of 'dict' objects}
+154501831   38.598    0.000   38.598    0.000 {method 'setdefault' of 'dict' objects}
+"""
+
+100.0%
+Build 同现矩阵co-rated users matrix success!
+
+
+"""
+Build 同现矩阵co-rated users matrix success!
+         154740326 function calls in 42.484 seconds
+
+   Ordered by: standard name
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1   22.646   22.646   42.483   42.483 <ipython-input-20-749a9bad330d>:3(sim_movie)
+        1    0.001    0.001   42.484   42.484 <string>:1(<module>)
+    17745    2.131    0.000    2.330    0.000 iostream.py:180(schedule)
+    17581    0.045    0.000    0.065    0.000 iostream.py:284(_is_master_process)
+    17581    0.008    0.000    0.013    0.000 iostream.py:297(_schedule_flush)
+    17581    0.103    0.000    2.514    0.000 iostream.py:342(write)
+    17745    0.029    0.000    0.029    0.000 iostream.py:87(_event_pipe)
+    17745    0.022    0.000    0.051    0.000 threading.py:1062(_wait_for_tstate_lock)
+    17745    0.050    0.000    0.110    0.000 threading.py:1104(is_alive)
+    17745    0.008    0.000    0.008    0.000 threading.py:506(is_set)
+        1    0.000    0.000   42.484   42.484 {built-in method builtins.exec}
+    17581    0.008    0.000    0.008    0.000 {built-in method builtins.isinstance}
+        1    0.000    0.000    0.000    0.000 {built-in method builtins.len}
+     8791    0.090    0.000    2.604    0.000 {built-in method builtins.print}
+     8789    0.053    0.000    0.053    0.000 {built-in method builtins.round}
+    17581    0.019    0.000    0.019    0.000 {built-in method nt.getpid}
+    17745    0.061    0.000    0.061    0.000 {built-in method nt.urandom}
+    17745    0.029    0.000    0.029    0.000 {method 'acquire' of '_thread.lock' objects}
+        1    0.000    0.000    0.000    0.000 {method 'disable' of '_lsprof.Profiler' objects}
+     8789    0.052    0.000    0.052    0.000 {method 'format' of 'str' objects}
+154475464   17.110    0.000   17.110    0.000 {method 'get' of 'dict' objects}
+     8790    0.004    0.000    0.004    0.000 {method 'keys' of 'dict' objects}
+    17578    0.015    0.000    0.015    0.000 {method 'setdefault' of 'dict' objects}
+"""
+
+
+def sim_movie(trainSet, movie_popular):
+    sim = tl.Similarity()
+    movie_sim_matrix = {}
+    i,max = 0, len(movie_popular)
+    # 遍历训练数据，获得用户对有过的行为的物品
+    for m1 in movie_popular.keys():
+        movie_sim_matrix.setdefault(m1, {})
+        # 遍历该用户每件物品项
+        for m2 in movie_popular.keys():
+            # 遍历该用户每件物品项
+            if m1 == m2:
+                movie_sim_matrix[m1].setdefault(m2, 1)
+                continue 
+            # if m2 in movie_sim_matrix:
+                # movie_sim_matrix[m1][m2] = movie_sim_matrix[m2][m1]
+                # continue
+     
+            u1 = trainSet.get(m1)
+            u2 = trainSet.get(m2)
+            # simi = sim.cosine_similarity(u1,u2)
+            # movie_sim_matrix[m1].setdefault(m2, simi)
+
+        print("\r{0}%".format(round(i/max*100)), end='')
+        i += 1
+    print()
+    # movie and movie 矩阵
+    print("Build 同现矩阵co-rated users matrix success!")
+    return movie_sim_matrix
+
+# 读取数据集合
+path = 'ratings.csv'
+os.path.exists(path)
+trainSet, testSet = get_dataset(path)
+movie_popular, user_list = count_user(trainSet)
+new_trainSet = users_all(trainSet, user_list)
+
+
+import cProfile
+import time
+
+cProfile.run('sim_movie(new_trainSet, movie_popular)')
+ta = sim_movie(new_trainSet, movie_popular)
